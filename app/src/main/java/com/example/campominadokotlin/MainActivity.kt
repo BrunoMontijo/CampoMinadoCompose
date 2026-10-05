@@ -263,7 +263,7 @@ fun CampoMinadoScreen(modifier: Modifier = Modifier) {
                                                 motor.abrirVizinhosVazios(l, c)
                                                 // Condicao de vitoria 85 casas seguraas
                                                 val abertas = motor.matriz.flatten().count { it.revelada }
-                                                if (abertas == 85) {
+                                                if (abertas == 1) {
                                                     jogoRodando = false
                                                     mensagemFim = "Parabéns, você VENCEU!"
 
