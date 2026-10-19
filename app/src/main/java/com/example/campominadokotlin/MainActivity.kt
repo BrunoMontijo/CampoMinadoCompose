@@ -1,32 +1,27 @@
 package com.example.campominadokotlin
 
+import android.app.Activity
+import android.content.pm.ActivityInfo
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-
-import android.content.Context
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.ui.platform.LocalContext
-
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.Button
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -41,35 +36,41 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                CampoMinadoScreen(modifier = Modifier.padding(innerPadding))
+                CampoMinadoApp(modifier = Modifier.padding(innerPadding))
             }
         }
     }
 }
 
 class CelulaEstado(val linha: Int, val coluna: Int) {
-    var valor by mutableStateOf(0) // -1 é bomba, 0 a 8 são os vizinhos
+    var valor by mutableStateOf(0)
     var revelada by mutableStateOf(false)
-    var temBandeira by mutableStateOf(false)
+    var marcacao by mutableStateOf(0)
 }
 
-// essa parte aq é do salvamento e os top 10 vencedores.
 data class PartidaRecorde(
     val nomeJogador: String,
     val jogadas: Int,
     val tempoSegundos: Int,
-    val dataHora: String
+    val dataHora: String,
+    val nivel: String
+)
+
+data class DificuldadeConfig(
+    val nome: String,
+    val linhas: Int,
+    val colunas: Int,
+    val bombas: Int
 )
 
 fun salvarRecorde(context: Context, partida: PartidaRecorde) {
     val prefs = context.getSharedPreferences("RankingPrefs", Context.MODE_PRIVATE)
     val recordsAntigos = prefs.getString("top10", "") ?: ""
 
-    val novaPartida = "${partida.nomeJogador}|${partida.jogadas}|${partida.tempoSegundos}|${partida.dataHora}"
+    val novaPartida = "${partida.nomeJogador}|${partida.jogadas}|${partida.tempoSegundos}|${partida.dataHora}|${partida.nivel}"
     val lista = if (recordsAntigos.isEmpty()) mutableListOf() else recordsAntigos.split(";;").toMutableList()
     lista.add(novaPartida)
 
-    // ordena pelo tempo. Se o tempo for igual, quem tiver menos jogadas vence.
     lista.sortBy {
         val dados = it.split("|")
         val tempo = dados.getOrNull(2)?.toIntOrNull() ?: 9999
@@ -82,7 +83,7 @@ fun salvarRecorde(context: Context, partida: PartidaRecorde) {
 }
 
 fun carregarRanking(context: Context): List<PartidaRecorde> {
-    val prefs = context.getSharedPreferences("RankingPrefs", android.content.Context.MODE_PRIVATE)
+    val prefs = context.getSharedPreferences("RankingPrefs", Context.MODE_PRIVATE)
     val recordsAntigos = prefs.getString("top10", "") ?: ""
     if (recordsAntigos.isEmpty()) return emptyList()
 
@@ -92,42 +93,42 @@ fun carregarRanking(context: Context): List<PartidaRecorde> {
             nomeJogador = dados.getOrNull(0) ?: "Desconhecido",
             jogadas = dados.getOrNull(1)?.toIntOrNull() ?: 0,
             tempoSegundos = dados.getOrNull(2)?.toIntOrNull() ?: 0,
-            dataHora = dados.getOrNull(3) ?: ""
+            dataHora = dados.getOrNull(3) ?: "",
+            nivel = dados.getOrNull(4) ?: "Desconhecido"
         )
     }
 }
 
-class MotorCampoMinado(val tamanho: Int = 10) {
-    val matriz = Array(tamanho) { l -> Array(tamanho) { c -> CelulaEstado(l, c) } }
+class MotorCampoMinado(val linhas: Int = 10, val colunas: Int = 10, val totalMinas: Int = 15) {
+    val matriz = Array(linhas) { l -> Array(colunas) { c -> CelulaEstado(l, c) } }
 
     init {
         reiniciarJogo()
     }
 
     fun reiniciarJogo() {
-        for (l in 0 until tamanho) {
-            for (c in 0 until tamanho) {
+        for (l in 0 until linhas) {
+            for (c in 0 until colunas) {
                 matriz[l][c].valor = 0
                 matriz[l][c].revelada = false
-                matriz[l][c].temBandeira = false
+                matriz[l][c].marcacao = 0
             }
         }
 
-        // parte da plantacao das bomba aleatoria.
         var minasPlantadas = 0
-        val totalMinas = 15
-        while (minasPlantadas < totalMinas) {
-            val l = (0 until tamanho).random()
-            val c = (0 until tamanho).random()
+        val maxMinas = minOf(totalMinas, (linhas * colunas) - 1)
+
+        while (minasPlantadas < maxMinas) {
+            val l = (0 until linhas).random()
+            val c = (0 until colunas).random()
             if (matriz[l][c].valor != -1) {
                 matriz[l][c].valor = -1
                 minasPlantadas++
             }
         }
 
-        // calcular os vizinho
-        for (l in 0 until tamanho) {
-            for (c in 0 until tamanho) {
+        for (l in 0 until linhas) {
+            for (c in 0 until colunas) {
                 if (matriz[l][c].valor == -1) continue
 
                 var minasAoRedor = 0
@@ -135,7 +136,7 @@ class MotorCampoMinado(val tamanho: Int = 10) {
                     for (j in -1..1) {
                         val vl = l + i
                         val vc = c + j
-                        if (vl in 0 until tamanho && vc in 0 until tamanho) {
+                        if (vl in 0 until linhas && vc in 0 until colunas) {
                             if (matriz[vl][vc].valor == -1) minasAoRedor++
                         }
                     }
@@ -146,12 +147,12 @@ class MotorCampoMinado(val tamanho: Int = 10) {
     }
 
     fun abrirVizinhosVazios(l: Int, c: Int) {
-        if (l !in 0 until tamanho || c !in 0 until tamanho) return
+        if (l !in 0 until linhas || c !in 0 until colunas) return
         val celula = matriz[l][c]
 
-        if (celula.revelada || celula.temBandeira || celula.valor == -1) return
+        if (celula.revelada || celula.marcacao == 1 || celula.valor == -1) return
 
-        celula.revelada = true // ao alterar a cor muda sozinha
+        celula.revelada = true
 
         if (celula.valor == 0) {
             for (i in -1..1) {
@@ -163,17 +164,100 @@ class MotorCampoMinado(val tamanho: Int = 10) {
     }
 }
 
+@Composable
+fun CampoMinadoApp(modifier: Modifier = Modifier) {
+    var configSelecionada by remember { mutableStateOf<DificuldadeConfig?>(null) }
+    var mostrarCustomDialog by remember { mutableStateOf(false) }
+
+    if (configSelecionada == null) {
+        Column(
+            modifier = modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(text = "💣 Campo Minado", fontSize = 28.sp, fontWeight = FontWeight.Bold)
+            Spacer(modifier = Modifier.height(32.dp))
+
+            Button(onClick = { configSelecionada = DificuldadeConfig("Fácil", 10, 10, 15) }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Text("Fácil (10x10 - 15 bombas)")
+            }
+            Button(onClick = { configSelecionada = DificuldadeConfig("Médio", 16, 16, 46) }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Text("Médio (16x16 - 18% / 46 bombas)")
+            }
+            Button(onClick = { configSelecionada = DificuldadeConfig("Difícil", 16, 30, 100) }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Text("Difícil (16x30 - 21% / 100 bombas)")
+            }
+            Button(onClick = { mostrarCustomDialog = true }, modifier = Modifier.fillMaxWidth().padding(8.dp), colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)) {
+                Text("Personalizado (MAX 30x30 - MIN 5x5)")
+            }
+        }
+
+        if (mostrarCustomDialog) {
+            var lInput by remember { mutableStateOf("10") }
+            var cInput by remember { mutableStateOf("10") }
+            var mInput by remember { mutableStateOf("10") }
+
+            AlertDialog(
+                onDismissRequest = { mostrarCustomDialog = false },
+                title = { Text("Modo Personalizado") },
+                text = {
+                    Column {
+                        OutlinedTextField(value = lInput, onValueChange = { lInput = it }, label = { Text("Linhas") })
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(value = cInput, onValueChange = { cInput = it }, label = { Text("Colunas") })
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(value = mInput, onValueChange = { mInput = it }, label = { Text("Bombas") })
+                    }
+                },
+                confirmButton = {
+                    Button(onClick = {
+                        var linhas = lInput.toIntOrNull() ?: 10
+                        var colunas = cInput.toIntOrNull() ?: 10
+                        var bombas = mInput.toIntOrNull() ?: 10
+
+                        linhas = linhas.coerceIn(5, 30)
+                        colunas = colunas.coerceIn(5, 30)
+
+                        val maxBombas = (linhas * colunas) - 1
+                        bombas = bombas.coerceIn(1, maxBombas)
+
+                        configSelecionada = DificuldadeConfig("Personalizado", linhas, colunas, bombas)
+                        mostrarCustomDialog = false
+                    }) {
+                        Text("Jogar")
+                    }
+                }
+            )
+        }
+    } else {
+        CampoMinadoScreen(
+            config = configSelecionada!!,
+            onVoltarMenu = { configSelecionada = null },
+            modifier = modifier
+        )
+    }
+}
 
 @Composable
-fun CampoMinadoScreen(modifier: Modifier = Modifier) {
-
+fun CampoMinadoScreen(config: DificuldadeConfig, onVoltarMenu: () -> Unit, modifier: Modifier = Modifier) {
     val contexto = LocalContext.current
 
-    val motor = remember { MotorCampoMinado() }
+    val activity = contexto as? Activity
+    DisposableEffect(config.colunas) {
+        if (config.colunas > 12) {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+        }
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    val motor = remember(config) { MotorCampoMinado(config.linhas, config.colunas, config.bombas) }
+
     var jogadas by remember { mutableStateOf(0) }
     var tempoSegundos by remember { mutableStateOf(0) }
     var jogoRodando by remember { mutableStateOf(false) }
-    var mensagemFim by remember { mutableStateOf("") } // Guarda se ganhou ou perdeu
+    var mensagemFim by remember { mutableStateOf("") }
 
     var mostrarDialogNome by remember { mutableStateOf(false) }
     var nomeDigitado by remember { mutableStateOf("") }
@@ -181,7 +265,6 @@ fun CampoMinadoScreen(modifier: Modifier = Modifier) {
     var mostrarRanking by remember { mutableStateOf(false) }
     var listaRanking by remember { mutableStateOf(listOf<PartidaRecorde>()) }
 
-    // parte do cronometro
     LaunchedEffect(jogoRodando) {
         if (jogoRodando) {
             while (true) {
@@ -192,112 +275,113 @@ fun CampoMinadoScreen(modifier: Modifier = Modifier) {
     }
 
     Column(
-        modifier = modifier.fillMaxSize(),
+        modifier = modifier.fillMaxSize().padding(8.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        RelogioNoTopo()
-
-        // aqui fica parte do placar, jogadas e tambem tempo
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 32.dp),
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "Jogadas: $jogadas", fontSize = 18.sp, fontWeight = FontWeight.Bold)
-            val min = tempoSegundos / 60
-            val seg = tempoSegundos % 60
-            Text(text = String.format(Locale.getDefault(), "Tempo: %02d:%02d", min, seg), fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Button(onClick = onVoltarMenu) {
+                Text("← Menu")
+            }
+            RelogioNoTopo()
         }
 
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(text = "Jogadas: $jogadas", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            val min = tempoSegundos / 60
+            val seg = tempoSegundos % 60
+            Text(text = String.format(Locale.getDefault(), "Tempo: %02d:%02d", min, seg), fontSize = 16.sp, fontWeight = FontWeight.Bold)
+        }
 
-
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
         if (mensagemFim.isNotEmpty()) {
             Text(
                 text = mensagemFim,
-                fontSize = 24.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 color = if (mensagemFim.contains("VENCEU")) Color(0xFF009900) else Color.Red
             )
         }
 
-        Spacer(modifier = Modifier.height(20.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // aqui a parte que desenha a matriz
-        Column {
-            for (l in 0 until motor.tamanho) {
-                Row {
-                    for (c in 0 until motor.tamanho) {
-                        val celula = motor.matriz[l][c]
+        Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+            val scrollHorizontal = rememberScrollState() // Permite arrastar pros lados
+            LazyColumn(modifier = Modifier.horizontalScroll(scrollHorizontal)) {
+                items(config.linhas) { l ->
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                        for (c in 0 until config.colunas) {
+                            val celula = motor.matriz[l][c]
 
-                        // aq é substitui o botao por um quadrado desenhado
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .padding(1.dp)
-                                .background(
-
-                                    if (celula.revelada && celula.valor == -1) Color.Red // Explodiu
-                                    else if (celula.revelada) Color.LightGray
-                                    else Color.DarkGray
-                                )
-                                .border(1.dp, Color.Black)
-                                // sub do clique normal e longo
-                                .pointerInput(Unit) {
-                                    detectTapGestures(
-                                        onTap = {
-                                            if (mensagemFim.isNotEmpty() || celula.revelada || celula.temBandeira) return@detectTapGestures
-
-                                            if (!jogoRodando) jogoRodando = true
-                                            jogadas++
-
-                                            if (celula.valor == -1) {
-                                                celula.revelada = true
-                                                jogoRodando = false
-                                                mensagemFim = "Perdeu... não desista!"
-                                                // Revela todas as bombas ao perder
-                                                motor.matriz.flatten().filter { it.valor == -1 }.forEach { it.revelada = true }
-                                            } else {
-                                                motor.abrirVizinhosVazios(l, c)
-                                                // Condicao de vitoria 85 casas seguraas
-                                                val abertas = motor.matriz.flatten().count { it.revelada }
-                                                if (abertas == 85) {
-                                                    jogoRodando = false
-                                                    mensagemFim = "Parabéns, você VENCEU!"
-
-                                                    mostrarDialogNome = true
-                                                }
-                                            }
-                                        },
-                                        onLongPress = {
-
-                                            if (mensagemFim.isNotEmpty() || celula.revelada) return@detectTapGestures
-
-                                            if (!jogoRodando) jogoRodando = true
-                                            jogadas++
-                                            celula.temBandeira = !celula.temBandeira
-                                        }
+                            Box(
+                                modifier = Modifier
+                                    .size(30.dp)
+                                    .padding(1.dp)
+                                    .background(
+                                        if (celula.revelada && celula.valor == -1) Color.Red
+                                        else if (celula.revelada) Color.LightGray
+                                        else Color.DarkGray
                                     )
-                                },
-                            contentAlignment = Alignment.Center
-                        ) {
+                                    .border(1.dp, Color.Black)
+                                    .pointerInput(Unit) {
+                                        detectTapGestures(
+                                            onTap = {
+                                                if (mensagemFim.isNotEmpty() || celula.revelada || celula.marcacao == 1) return@detectTapGestures
 
-                            if (celula.temBandeira && !celula.revelada) {
-                                Text("🚩")
-                            } else if (celula.revelada) {
-                                if (celula.valor == -1) Text("💣")
-                                else if (celula.valor > 0) Text(celula.valor.toString(), fontWeight = FontWeight.Bold)
+                                                if (!jogoRodando) jogoRodando = true
+                                                jogadas++
+
+                                                if (celula.valor == -1) {
+                                                    celula.revelada = true
+                                                    jogoRodando = false
+                                                    mensagemFim = "Perdeu... não desista!"
+                                                    motor.matriz.flatten().filter { it.valor == -1 }.forEach { it.revelada = true }
+                                                } else {
+                                                    motor.abrirVizinhosVazios(l, c)
+
+                                                    val totalCasas = config.linhas * config.colunas
+                                                    val casasReveladas = motor.matriz.flatten().count { it.revelada }
+                                                    if (casasReveladas == totalCasas - config.bombas) {
+                                                        jogoRodando = false
+                                                        mensagemFim = "Parabéns, você VENCEU!"
+                                                        mostrarDialogNome = true
+                                                    }
+                                                }
+                                            },
+                                            onLongPress = {
+                                                if (mensagemFim.isNotEmpty() || celula.revelada) return@detectTapGestures
+                                                if (!jogoRodando) jogoRodando = true
+
+                                                jogadas++
+
+                                                celula.marcacao = if (celula.marcacao == 0) 1 else 0
+                                            }
+                                        )
+                                    },
+                                contentAlignment = Alignment.Center
+                            ) {
+                                if (!celula.revelada) {
+                                    if (celula.marcacao == 1) Text("🚩", fontSize = 12.sp)
+                                } else {
+                                    if (celula.valor == -1) Text("💣", fontSize = 12.sp)
+                                    else if (celula.valor > 0) Text(celula.valor.toString(), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        Spacer(modifier = Modifier.height(24.dp))
 
-        //fim do jogo com reiniciar pra limpar
+        Spacer(modifier = Modifier.height(12.dp))
+
         if (mensagemFim.isNotEmpty()) {
             Button(
                 onClick = {
@@ -307,22 +391,21 @@ fun CampoMinadoScreen(modifier: Modifier = Modifier) {
                     jogoRodando = false
                     mensagemFim = ""
                 },
-                modifier = Modifier.padding(8.dp)
+                modifier = Modifier.padding(4.dp)
             ) {
                 Text("Começar Novamente")
             }
         }
 
-        // botao do ranking
         Button(
             onClick = {
                 listaRanking = carregarRanking(contexto)
                 mostrarRanking = true
             },
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier.padding(4.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color.DarkGray)
         ) {
-            Text("Ver Ranking Top 10 (Vencedores)")
+            Text("Ver Ranking Top 10")
         }
     }
 
@@ -332,7 +415,7 @@ fun CampoMinadoScreen(modifier: Modifier = Modifier) {
             title = { Text("Novo Recorde!") },
             text = {
                 Column {
-                    Text("Você venceu em $tempoSegundos segundos com $jogadas jogadas.")
+                    Text("Você venceu o nível ${config.nome} em $tempoSegundos segundos com $jogadas jogadas.")
                     Spacer(modifier = Modifier.height(8.dp))
                     OutlinedTextField(
                         value = nomeDigitado,
@@ -346,20 +429,11 @@ fun CampoMinadoScreen(modifier: Modifier = Modifier) {
                 Button(
                     onClick = {
                         if (nomeDigitado.isNotBlank()) {
-
                             val dataAtual = SimpleDateFormat("dd/MM/yy HH:mm", Locale.getDefault()).format(Date())
-
-
-                            val novaPartida = PartidaRecorde(nomeDigitado, jogadas, tempoSegundos, dataAtual)
-
-
+                            val novaPartida = PartidaRecorde(nomeDigitado, jogadas, tempoSegundos, dataAtual, config.nome)
                             salvarRecorde(contexto, novaPartida)
-
-
                             mostrarDialogNome = false
                             nomeDigitado = ""
-
-                            // atualizar os 10 automaticamente
                             listaRanking = carregarRanking(contexto)
                             mostrarRanking = true
                         }
@@ -387,7 +461,7 @@ fun CampoMinadoScreen(modifier: Modifier = Modifier) {
                             ) {
                                 Column(modifier = Modifier.padding(8.dp)) {
                                     Text(text = "${index + 1}º - ${partida.nomeJogador}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                                    Text(text = "Tempo: ${partida.tempoSegundos}s | Jogadas: ${partida.jogadas}", fontSize = 14.sp)
+                                    Text(text = "Nível: ${partida.nivel} | Tempo: ${partida.tempoSegundos}s | Jogadas: ${partida.jogadas}", fontSize = 14.sp)
                                     Text(text = partida.dataHora, fontSize = 12.sp, color = Color.Gray)
                                 }
                             }
@@ -402,7 +476,6 @@ fun CampoMinadoScreen(modifier: Modifier = Modifier) {
             }
         )
     }
-
 }
 
 @Composable
@@ -415,7 +488,5 @@ fun RelogioNoTopo() {
             delay(1000)
         }
     }
-    Box(modifier = Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.TopEnd) {
-        Text(text = horaAtual, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-    }
+    Text(text = horaAtual, fontSize = 16.sp, fontWeight = FontWeight.Bold)
 }

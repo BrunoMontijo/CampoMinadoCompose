@@ -2,22 +2,25 @@
 
 Projeto de um jogo Campo Minado desenvolvido nativamente para Android utilizando Kotlin e Jetpack Compose.
 
+## ✨ Novidades desta Versão
+- **Níveis de Dificuldade:** Fácil (10x10), Médio (16x16), Difícil (16x30 - Tela adaptável em Landscape) e Personalizado (Min 5x5 / Max 30x30).
+- **Sistema de Marcação:** Clique longo para adicionar Bandeiras (🚩).
+- **Layout Responsivo:** Rotação automática e scroll horizontal/vertical para tabuleiros maiores.
+- **Ranking Aprimorado:** O Top 10 agora registra a dificuldade em que a partida foi vencida.
+
 ## 🛠️ Tecnologias e Conceitos Utilizados
 - **Interface UI:** Jetpack Compose (Lógica baseada em estado com `remember` e `mutableStateOf`).
-- **Assincronismo:** Coroutines (`LaunchedEffect`) para a contagem contínua do cronómetro.
+- **Assincronismo:** Coroutines (`LaunchedEffect`) para a contagem contínua do cronômetro.
 - **Persistência de Dados:** `SharedPreferences` para guardar, ordenar e carregar o Ranking Top 10 localmente no dispositivo.
 - **Lógica de Jogo:** Algoritmo recursivo para abertura de casas vizinhas seguras.
 
-## 📸 Capturas de Ecrã
+## 📸 Capturas de Tela
 
-### Jogo em Andamento (Cronómetro Ativo)
-![Cronómetro e Jogo Rodando](screenshots/jogo.png)
+### Menu de Dificuldades
+![Menu de Dificuldades](screenshots/menu.png)
 
-### Tela de Vitória (Pop-up de Registo no Ranking)
-![Tela de Vitória](screenshots/vitoria.png)
+### Jogo em Andamento (Bandeiras e Cronômetro)
+![Jogo e Bandeiras](screenshots/jogo.png)
 
-### Tela de Derrota (Tente Novamente)
-![Tela de Derrota](screenshots/derrota.png)
-
-### Sistema de Ranking Top 10
+### Sistema de Ranking Top 10 (Com Níveis)
 ![Ranking Top 10](screenshots/ranking.png)
